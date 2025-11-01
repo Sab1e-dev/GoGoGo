@@ -2,6 +2,7 @@ package com.zcshou.joystick;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
@@ -351,22 +352,25 @@ public class JoyStick extends View {
                 }
             }
         });
-        /* 方向键点击处理 */
-        RockerView rckView = mJoystickLayout.findViewById(R.id.joystick_rocker);
-        rckView.setListener(this::processDirection);
 
-        /* 方向键点击处理 */
-        ButtonView btnView = mJoystickLayout.findViewById(R.id.joystick_button);
-        btnView.setListener(this::processDirection);
+        /* 路径启动 */
+        ImageButton joystickStart = mJoystickLayout.findViewById(R.id.joystick_start);
+        joystickStart.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Intent startIntent = new Intent("ACTION_START_ROUTE");
+                mContext.sendBroadcast(startIntent);
+            }
+        });
 
-        /* 这里用来决定摇杆类型 */
-        if (sharedPreferences.getString("setting_joystick_type", "0").equals("0")) {
-            rckView.setVisibility(VISIBLE);
-            btnView.setVisibility(GONE);
-        } else {
-            rckView.setVisibility(GONE);
-            btnView.setVisibility(VISIBLE);
-        }
+        ImageButton joystickStop = mJoystickLayout.findViewById(R.id.joystick_stop);
+        joystickStop.setOnClickListener(new OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Intent startIntent = new Intent("ACTION_STOP_ROUTE");
+                mContext.sendBroadcast(startIntent);
+            }
+        });
     }
 
     private void processDirection(boolean auto, double angle, double r) {

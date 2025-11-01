@@ -2,6 +2,15 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     app:iconSpaceReserved="false">
 
+    <PreferenceCategory app:title="路径设置">
+        <EditTextPreference
+            app:key="setting_move_speed"
+            app:title="移动速度"
+            app:defaultValue="1.0"
+            app:summary="设置移动速度(米/秒)"
+            app:dialogTitle="请输入移动速度"/>
+    </PreferenceCategory>
+
     <PreferenceCategory
         app:title="@string/setting_group_move"
         app:iconSpaceReserved="false">

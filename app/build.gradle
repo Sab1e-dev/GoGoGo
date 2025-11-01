@@ -24,7 +24,6 @@ android {
             keyPassword 'GoGoGo'
         }
     }
-
     defaultConfig {
         applicationId "com.zcshou.gogogo"
         minSdkVersion 27
@@ -36,7 +35,7 @@ android {
         resourceConfigurations += ['zh', 'zh-rCN', 'en', 'en-rUS']
         ndk {
             //noinspection ChromeOsAbiSupport
-            abiFilters "arm64-v8a"
+            abiFilters "armeabi-v7a", "arm64-v8a", "x86", "x86_64"
         }
         signingConfig = signingConfigs.release
     }

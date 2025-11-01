@@ -124,6 +124,7 @@
     <string name="cur_position">返回当前位置</string>
     <string name="zoom_in">放大</string>
     <string name="zoom_out">缩小</string>
+    <string name="delete_point">删除坐标点</string>
 
     <!-- 百度地图 -->
     <string name="map_pic_sate">卫星图</string>

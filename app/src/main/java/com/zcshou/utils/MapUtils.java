@@ -1,5 +1,7 @@
 package com.zcshou.utils;
 
+import com.baidu.mapapi.model.LatLng;
+
 public class MapUtils {
 //    public final static String COORDINATE_TYPE_GCJ02 = "gcj02";
 //    public final static String COORDINATE_TYPE_BD09LL = "bd09ll";
@@ -70,7 +72,7 @@ public class MapUtils {
         double mglng = lng + dlng;
         return new double[] { lng * 2 - mglng, lat * 2 - mglat };
     }
-    
+
     private static double transformLat(double lat, double lon) {
         double ret = -100.0 + 2.0 * lat + 3.0 * lon + 0.2 * lon * lon + 0.1 * lat * lon + 0.2 * Math.sqrt(Math.abs(lat));
         ret += (20.0 * Math.sin(6.0 * lat * pi) + 20.0 * Math.sin(2.0 * lat * pi)) * 2.0 / 3.0;
@@ -78,7 +80,7 @@ public class MapUtils {
         ret += (160.0 * Math.sin(lon / 12.0 * pi) + 320 * Math.sin(lon * pi  / 30.0)) * 2.0 / 3.0;
         return ret;
     }
-    
+
     private static double transformLon(double lat, double lon) {
         double ret = 300.0 + lat + 2.0 * lon + 0.1 * lat * lat + 0.1 * lat * lon + 0.1 * Math.sqrt(Math.abs(lat));
         ret += (20.0 * Math.sin(6.0 * lat * pi) + 20.0 * Math.sin(2.0 * lat * pi)) * 2.0 / 3.0;
@@ -86,8 +88,26 @@ public class MapUtils {
         ret += (150.0 * Math.sin(lat / 12.0 * pi) + 300.0 * Math.sin(lat / 30.0 * pi)) * 2.0 / 3.0;
         return ret;
     }
-    
+
 //    private static boolean out_of_china(double lng, double lat) {
 //        return (lng < 72.004 || lng > 137.8347) || ((lat < 0.8293 || lat > 55.8271));
 //    }
+    public static double getDistance(LatLng point1, LatLng point2) {
+        double lat1 = point1.latitude;
+        double lon1 = point1.longitude;
+        double lat2 = point2.latitude;
+        double lon2 = point2.longitude;
+
+        double radLat1 = Math.toRadians(lat1);
+        double radLat2 = Math.toRadians(lat2);
+        double a = radLat1 - radLat2;
+        double b = Math.toRadians(lon1) - Math.toRadians(lon2);
+
+        double s = 2 * Math.asin(Math.sqrt(Math.pow(Math.sin(a / 2), 2) +
+                Math.cos(radLat1) * Math.cos(radLat2) * Math.pow(Math.sin(b / 2), 2)));
+        s = s * 6378137.0; // 地球半径(米)
+        s = Math.round(s * 10000) / 10000.0;
+
+        return s;
+    }
 }

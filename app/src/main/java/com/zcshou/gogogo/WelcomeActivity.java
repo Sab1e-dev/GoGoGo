@@ -55,6 +55,8 @@ public class WelcomeActivity extends AppCompatActivity {
         startBtn.setOnClickListener(v -> startMainActivity());
 
         checkAgreementAndPrivacy();
+        startMainActivity();
+        startMainActivity();
     }
 
     @Override
@@ -122,10 +124,6 @@ public class WelcomeActivity extends AppCompatActivity {
     }
 
     private void startMainActivity() {
-        if (!checkBox.isChecked()) {
-            GoUtils.DisplayToast(this, getResources().getString(R.string.app_error_agreement));
-            return;
-        }
 
         if (!GoUtils.isNetworkAvailable(this)) {
             GoUtils.DisplayToast(this, getResources().getString(R.string.app_error_network));

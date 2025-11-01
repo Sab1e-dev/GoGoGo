@@ -13,6 +13,7 @@ import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
+import android.graphics.Color;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -39,6 +40,7 @@ import android.widget.RadioButton;
 import android.widget.RadioGroup;
 import android.widget.SimpleAdapter;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.ActionBarDrawerToggle;
@@ -53,7 +55,6 @@ import com.baidu.location.BDAbstractLocationListener;
 import com.baidu.location.BDLocation;
 import com.baidu.location.LocationClient;
 import com.baidu.location.LocationClientOption;
-import com.baidu.mapapi.SDKInitializer;
 import com.baidu.mapapi.map.BaiduMap;
 import com.baidu.mapapi.map.BitmapDescriptor;
 import com.baidu.mapapi.map.BitmapDescriptorFactory;
@@ -66,6 +67,8 @@ import com.baidu.mapapi.map.MapView;
 import com.baidu.mapapi.map.MarkerOptions;
 import com.baidu.mapapi.map.MyLocationConfiguration;
 import com.baidu.mapapi.map.MyLocationData;
+import com.baidu.mapapi.map.Polyline;
+import com.baidu.mapapi.map.PolylineOptions;
 import com.baidu.mapapi.model.LatLng;
 import com.baidu.mapapi.search.core.SearchResult;
 import com.baidu.mapapi.search.geocode.GeoCodeResult;
@@ -94,6 +97,8 @@ import java.util.Map;
 import com.zcshou.service.ServiceGo;
 import com.zcshou.database.DataBaseHistoryLocation;
 import com.zcshou.database.DataBaseHistorySearch;
+import com.zcshou.utils.CoordinateValidator;
+import com.zcshou.utils.RouteManager;
 import com.zcshou.utils.ShareUtils;
 import com.zcshou.utils.GoUtils;
 import com.zcshou.utils.MapUtils;
@@ -164,10 +169,34 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
     private BroadcastReceiver mDownloadBdRcv;
     private String mUpdateFilename;
 
+    /*============================== 路线系统 ==============================*/
+
+    private List<LatLng> mPoints = new ArrayList<>();
+    private Polyline mPolyline;
+    private ImageButton mDeletePoint;
+
+    private RouteManager mRouteManager;
+    private boolean isRouteRunning = false;
+    private BroadcastReceiver routeControlReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if ("ACTION_START_ROUTE".equals(action)) {
+                startRouteWithMock();
+            } else if ("ACTION_STOP_ROUTE".equals(action)) {
+                stopRouteWithMock();
+            }
+        }
+    };
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        IntentFilter filter = new IntentFilter();
+        filter.addAction("ACTION_START_ROUTE");
+        filter.addAction("ACTION_STOP_ROUTE");
+        registerReceiver(routeControlReceiver, filter);
 
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
@@ -182,12 +211,13 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
 
         sharedPreferences = PreferenceManager.getDefaultSharedPreferences(this);
         mOkHttpClient = new OkHttpClient();
-
         initNavigationView();
 
         initMap();
 
         initMapLocation();
+
+        initRouteManager();
 
         initMapButton();
 
@@ -212,6 +242,8 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
         initUpdateVersion();
 
         checkUpdateVersion(false);
+
+        CoordinateValidator.testKnownPoints();
     }
 
     @Override
@@ -265,6 +297,7 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
         mLocationHistoryDB.close();
         mSearchHistoryDB.close();
 
+        unregisterReceiver(routeControlReceiver);
         super.onDestroy();
     }
 
@@ -405,6 +438,40 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
 
     }
 
+    private void initRouteManager() {
+        mRouteManager = new RouteManager(mBaiduMap);
+        mRouteManager.setRouteListener(new RouteManager.RouteListener() {
+            @Override
+            public void onPositionUpdate(double wgsLng, double wgsLat) {
+                // 更新模拟位置
+                if (mServiceBinder != null) {
+                    double alt = Double.parseDouble(sharedPreferences.getString("setting_altitude", "55.0"));
+                    mServiceBinder.setPosition(wgsLng, wgsLat, alt);
+                }
+            }
+
+            @Override
+            public void onRouteStarted() {
+                // 状态已在 startRouteWithMock 中更新
+            }
+
+            @Override
+            public void onRouteStopped() {
+                // 状态已在 startRouteWithMock 中更新
+            }
+
+            @Override
+            public void onRouteFinished() {
+                isRouteRunning = false;
+                mButtonStart.setImageResource(R.drawable.ic_position);
+                Snackbar.make(mButtonStart, "路径模拟已完成", Snackbar.LENGTH_LONG).show();
+            }
+        });
+
+        // 设置移动速度（从设置中读取或使用默认值）
+        double speed = Double.parseDouble(sharedPreferences.getString("setting_move_speed", "1.0"));
+        mRouteManager.setMoveSpeed(speed);
+    }
     /*============================== NavigationView 相关 ==============================*/
     private void initNavigationView() {
         /*============================== NavigationView 相关 ==============================*/
@@ -454,7 +521,104 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
     }
 
     /*============================== 主界面地图 相关 ==============================*/
+    private void drawLine() {
+        if (mPoints.size() < 2) return; // 至少两个点才连线
+
+        // 如果已经存在一条线，先清除
+        if (mPolyline != null) {
+            mPolyline.remove();
+        }
+
+        PolylineOptions polylineOptions = new PolylineOptions()
+                .points(mPoints)
+                .width(8)
+                .color(Color.RED);   // 线条颜色
+
+        mPolyline = (Polyline) mBaiduMap.addOverlay(polylineOptions);
+    }
+    private void addMarker(LatLng point) {
+        BitmapDescriptor bitmap = BitmapDescriptorFactory.fromResource(R.drawable.icon_gcoding);
+        MarkerOptions markerOptions = new MarkerOptions()
+                .position(point)
+                .icon(bitmap);
+        mBaiduMap.addOverlay(markerOptions);
+    }
+    private void redrawAllMarkers() {
+        mBaiduMap.clear(); // 清地图（会清除线和点）
+
+        // 重新画线
+        if (mPoints.size() >= 2) {
+            drawLine();
+        }
+
+        // 重新加 marker
+        for (LatLng p : mPoints) {
+            addMarker(p);
+        }
+    }
+    private void undoLastPoint() {
+        mRouteManager.undoLastPoint();
+    }
+    private void startRouteWithMock() {
+        if (!GoUtils.isNetworkAvailable(this)) {
+            GoUtils.DisplayToast(this, getResources().getString(R.string.app_error_network));
+            return;
+        }
+
+        if (!GoUtils.isGpsOpened(this)) {
+            GoUtils.showEnableGpsDialog(this);
+            return;
+        }
+
+        if (!Settings.canDrawOverlays(getApplicationContext())) {
+            GoUtils.showEnableFloatWindowDialog(this);
+            return;
+        }
+
+        if (!GoUtils.isAllowMockLocation(this)) {
+            GoUtils.showEnableMockLocationDialog(this);
+            return;
+        }
+
+        if (isRouteRunning) {
+            // 停止路径模拟
+            mRouteManager.stopRoute();
+            stopGoLocation();
+            isRouteRunning = false;
+            mButtonStart.setImageResource(R.drawable.ic_position);
+            Snackbar.make(mButtonStart, "路径模拟已停止", Snackbar.LENGTH_SHORT).show();
+        }
+        // 启动路径模拟
+        if (mRouteManager.getPoints().size() < 2) {
+            Snackbar.make(mButtonStart, "请至少设置两个路径点", Snackbar.LENGTH_LONG).show();
+            return;
+        }
+
+        // 启动位置模拟服务
+        startGoLocation();
+        // 开始路径移动
+        mRouteManager.startRoute();
+        isRouteRunning = true;
+        mButtonStart.setImageResource(R.drawable.ic_close);
+        Snackbar.make(mButtonStart, "路径模拟已启动", Snackbar.LENGTH_SHORT).show();
+    }
+    private void stopRouteWithMock() {
+        if (isRouteRunning) {
+            // 停止路径模拟
+            mRouteManager.stopRoute();
+            stopGoLocation();
+            isRouteRunning = false;
+            mButtonStart.setImageResource(R.drawable.ic_position);
+            Snackbar.make(mButtonStart, "路径模拟已停止", Snackbar.LENGTH_SHORT).show();
+            XLog.i("路径模拟已停止");
+        } else {
+            Snackbar.make(mButtonStart, "路径模拟未运行", Snackbar.LENGTH_SHORT).show();
+        }
+    }
     private void initMap() {
+        mDeletePoint = findViewById(R.id.delete_point);
+        mDeletePoint.setOnClickListener(v->undoLastPoint());
+
         // 地图初始化
         mMapView = findViewById(R.id.bdMapView);
         mMapView.showZoomControls(false);
@@ -472,6 +636,8 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
             public void onMapClick(LatLng point) {
                 mMarkLatLngMap = point;
                 markMap();
+                mRouteManager.addPoint(point);
+                Toast.makeText(getApplicationContext(), "纬度"+point.latitude+"经度"+point.longitude, Toast.LENGTH_SHORT).show();
             }
             /**
              * 单击地图中的POI点
@@ -822,7 +988,6 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
 
         if (!Settings.canDrawOverlays(getApplicationContext())) {//悬浮窗权限判断
             GoUtils.showEnableFloatWindowDialog(this);
-            XLog.e("无悬浮窗权限!");
             return;
         }
 
@@ -840,18 +1005,12 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
                         .setAction("Action", null).show();
 
                 recordCurrentLocation(mMarkLatLngMap.longitude, mMarkLatLngMap.latitude);
-
                 mBaiduMap.clear();
                 mMarkLatLngMap = null;
-
-                if (GoUtils.isWifiEnabled(MainActivity.this)) {
-                    GoUtils.showDisableWifiDialog(MainActivity.this);
-                }
             }
         } else {
             if (!GoUtils.isAllowMockLocation(this)) {
                 GoUtils.showEnableMockLocationDialog(this);
-                XLog.e("无模拟位置权限!");
             } else {
                 if (mMarkLatLngMap == null) {
                     Snackbar.make(v, "请先点击地图位置或者搜索位置", Snackbar.LENGTH_LONG)
@@ -865,10 +1024,6 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
                     recordCurrentLocation(mMarkLatLngMap.longitude, mMarkLatLngMap.latitude);
                     mBaiduMap.clear();
                     mMarkLatLngMap = null;
-
-                    if (GoUtils.isWifiEnabled(MainActivity.this)) {
-                        GoUtils.showDisableWifiDialog(MainActivity.this);
-                    }
                 }
             }
         }
@@ -918,11 +1073,10 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
     // 记录请求的位置信息
     private void recordCurrentLocation(double lng, double lat) {
         //参数坐标系：bd09
-        final String safeCode = BuildConfig.MAPS_SAFE_CODE;
         final String ak = sharedPreferences.getString("setting_map_key", BuildConfig.MAPS_API_KEY);
         double[] latLng = MapUtils.bd2wgs(lng, lat);
         //bd09坐标的位置信息
-        String mapApiUrl = "https://api.map.baidu.com/reverse_geocoding/v3/?ak=" + ak + "&output=json&coordtype=bd09ll" + "&location=" + lat + "," + lng + "&mcode=" + safeCode;
+        String mapApiUrl = "https://api.map.baidu.com/reverse_geocoding/v3/?ak=" + ak + "&output=json&coordtype=bd09ll" + "&location=" + lat + "," + lng;
 
         okhttp3.Request request = new okhttp3.Request.Builder().url(mapApiUrl).get().build();
         final Call call = mOkHttpClient.newCall(request);
