@@ -18,6 +18,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.media.Image;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -47,6 +48,7 @@ import androidx.appcompat.app.ActionBarDrawerToggle;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.widget.SearchView;
 import androidx.appcompat.widget.Toolbar;
+import androidx.core.content.ContextCompat;
 import androidx.core.view.GravityCompat;
 import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.preference.PreferenceManager;
@@ -83,6 +85,7 @@ import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.navigation.NavigationView;
 import com.google.android.material.snackbar.Snackbar;
 
+import org.greenrobot.eventbus.EventBus;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -93,6 +96,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import com.zcshou.service.ServiceGo;
 import com.zcshou.database.DataBaseHistoryLocation;
@@ -177,26 +181,11 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
 
     private RouteManager mRouteManager;
     private boolean isRouteRunning = false;
-    private BroadcastReceiver routeControlReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            String action = intent.getAction();
-            if ("ACTION_START_ROUTE".equals(action)) {
-                startRouteWithMock();
-            } else if ("ACTION_STOP_ROUTE".equals(action)) {
-                stopRouteWithMock();
-            }
-        }
-    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
-        IntentFilter filter = new IntentFilter();
-        filter.addAction("ACTION_START_ROUTE");
-        filter.addAction("ACTION_STOP_ROUTE");
-        registerReceiver(routeControlReceiver, filter);
 
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
@@ -297,7 +286,6 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
         mLocationHistoryDB.close();
         mSearchHistoryDB.close();
 
-        unregisterReceiver(routeControlReceiver);
         super.onDestroy();
     }
 
@@ -439,7 +427,11 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
     }
 
     private void initRouteManager() {
-        mRouteManager = new RouteManager(mBaiduMap);
+        RouteManager.getInstance().initialize(mBaiduMap);
+        mRouteManager = RouteManager.getInstance();
+        if(mRouteManager == null){
+            throw new IllegalArgumentException("RouteManager cannot be null");
+        }
         mRouteManager.setRouteListener(new RouteManager.RouteListener() {
             @Override
             public void onPositionUpdate(double wgsLng, double wgsLat) {
@@ -466,11 +458,17 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
                 mButtonStart.setImageResource(R.drawable.ic_position);
                 Snackbar.make(mButtonStart, "路径模拟已完成", Snackbar.LENGTH_LONG).show();
             }
-        });
 
-        // 设置移动速度（从设置中读取或使用默认值）
-        double speed = Double.parseDouble(sharedPreferences.getString("setting_move_speed", "1.0"));
-        mRouteManager.setMoveSpeed(speed);
+            @Override
+            public void onRoutePaused() {
+
+            }
+
+            @Override
+            public void onRouteResumed() {
+
+            }
+        });
     }
     /*============================== NavigationView 相关 ==============================*/
     private void initNavigationView() {
@@ -597,7 +595,8 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
         // 启动位置模拟服务
         startGoLocation();
         // 开始路径移动
-        mRouteManager.startRoute();
+        double speed = Double.parseDouble(Objects.requireNonNull(sharedPreferences.getString("setting_move_speed", "1.0")));
+        mRouteManager.startRoute(speed);
         isRouteRunning = true;
         mButtonStart.setImageResource(R.drawable.ic_close);
         Snackbar.make(mButtonStart, "路径模拟已启动", Snackbar.LENGTH_SHORT).show();
@@ -616,6 +615,22 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
         }
     }
     private void initMap() {
+        ImageButton loopMode = findViewById(R.id.loop_mode);
+        loopMode.setOnClickListener(v->{
+            if(mRouteManager.isLoopMode()){
+                mRouteManager.setLoopMode(false);
+                loopMode.setColorFilter(ContextCompat.getColor(this, R.color.dimgray));
+
+            }else{
+                mRouteManager.setLoopMode(true);
+                loopMode.setColorFilter(ContextCompat.getColor(this, R.color.colorAccent));
+            }
+        });
+        ImageButton clearAllPoint = findViewById(R.id.clear_all_point);
+        clearAllPoint.setOnClickListener(v->{
+            mRouteManager.deleteAllPoints();
+        });
+
         mDeletePoint = findViewById(R.id.delete_point);
         mDeletePoint.setOnClickListener(v->undoLastPoint());
 
@@ -637,7 +652,6 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
                 mMarkLatLngMap = point;
                 markMap();
                 mRouteManager.addPoint(point);
-                Toast.makeText(getApplicationContext(), "纬度"+point.latitude+"经度"+point.longitude, Toast.LENGTH_SHORT).show();
             }
             /**
              * 单击地图中的POI点
@@ -950,7 +964,13 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
 
     private void initGoBtn() {
         mButtonStart = findViewById(R.id.faBtnStart);
-        mButtonStart.setOnClickListener(this::doGoLocation);
+        mButtonStart.setOnClickListener(v -> {
+            if (isRouteRunning) {
+                stopRouteWithMock();
+            } else {
+                startRouteWithMock();
+            }
+        });
     }
 
     private void startGoLocation() {

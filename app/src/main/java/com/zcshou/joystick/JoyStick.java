@@ -22,6 +22,7 @@ import android.widget.ListView;
 import android.widget.SimpleAdapter;
 import android.widget.TextView;
 import android.widget.SearchView;
+import android.widget.Toast;
 
 import androidx.preference.PreferenceManager;
 
@@ -41,6 +42,12 @@ import com.zcshou.gogogo.MainActivity;
 import com.zcshou.gogogo.R;
 import com.zcshou.utils.GoUtils;
 import com.zcshou.utils.MapUtils;
+import com.zcshou.utils.RouteManager;
+import com.zcshou.utils.RouteStateEvent;
+
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
+import org.greenrobot.eventbus.ThreadMode;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -66,6 +73,7 @@ public class JoyStick extends View {
     private ImageButton btnRun;
     private boolean isBike;
     private ImageButton btnBike;
+    private ImageButton joystickStart;
     private JoyStickClickListener mListener;
 
     // 移动
@@ -250,6 +258,7 @@ public class JoyStick extends View {
 
     @SuppressLint("InflateParams")
     private void initJoyStickView() {
+        EventBus.getDefault().register(this);
         /* 移动计时器 */
         mTimer = new GoUtils.TimeCount(DivGo, DivGo);
         mTimer.setListener(new GoUtils.TimeCount.TimeCountListener() {
@@ -278,88 +287,19 @@ public class JoyStick extends View {
         /* 整个摇杆拖动事件处理 */
         mJoystickLayout.setOnTouchListener(new JoyStickOnTouchListener());
 
-        /* 位置按钮点击事件处理 */
-        ImageButton btnPosition = mJoystickLayout.findViewById(R.id.joystick_position);
-        btnPosition.setOnClickListener(v -> {
-            if (mMapLayout.getParent() == null) {
-                mCurWin = WINDOW_TYPE_MAP;
-                show();
-            }
-        });
-
-        /* 历史按钮点击事件处理 */
-        ImageButton btnHistory = mJoystickLayout.findViewById(R.id.joystick_history);
-        btnHistory.setOnClickListener(v -> {
-            if (mHistoryLayout.getParent() == null) {
-                mCurWin = WINDOW_TYPE_HISTORY;
-                show();
-            }
-        });
-
-        /* 步行按键的点击处理 */
-        btnWalk = mJoystickLayout.findViewById(R.id.joystick_walk);
-        btnWalk.setOnClickListener(v -> {
-            if (!isWalk) {
-                btnWalk.setColorFilter(getResources().getColor(R.color.colorAccent, mContext.getTheme()));
-                isWalk = true;
-                btnRun.setColorFilter(getResources().getColor(R.color.black, mContext.getTheme()));
-                isRun = false;
-                btnBike.setColorFilter(getResources().getColor(R.color.black, mContext.getTheme()));
-                isBike = false;
-                try {
-                    mSpeed = Double.parseDouble(sharedPreferences.getString("setting_walk", getResources().getString(R.string.setting_walk_default)));
-                } catch (NumberFormatException e) {  // GOOD: The exception is caught.
-                    mSpeed = 1.2;
-                }
-            }
-        });
-        /* 默认为步行 */
-        isWalk = true;
-        btnWalk.setColorFilter(getResources().getColor(R.color.colorAccent, mContext.getTheme()));
-        /* 跑步按键的点击处理 */
-        isRun = false;
-        btnRun = mJoystickLayout.findViewById(R.id.joystick_run);
-        btnRun.setOnClickListener(v -> {
-            if (!isRun) {
-                btnRun.setColorFilter(getResources().getColor(R.color.colorAccent, mContext.getTheme()));
-                isRun = true;
-                btnWalk.setColorFilter(getResources().getColor(R.color.black, mContext.getTheme()));
-                isWalk = false;
-                btnBike.setColorFilter(getResources().getColor(R.color.black, mContext.getTheme()));
-                isBike = false;
-                try {
-                    mSpeed = Double.parseDouble(sharedPreferences.getString("setting_run", getResources().getString(R.string.setting_run_default)));
-                } catch (NumberFormatException e) {  // GOOD: The exception is caught.
-                    mSpeed = 3.6;
-                }
-            }
-        });
-        /* 自行车按键的点击处理 */
-        isBike = false;
-        btnBike = mJoystickLayout.findViewById(R.id.joystick_bike);
-        btnBike.setOnClickListener(v -> {
-            if (!isBike) {
-                btnBike.setColorFilter(getResources().getColor(R.color.colorAccent, mContext.getTheme()));
-                isBike = true;
-                btnWalk.setColorFilter(getResources().getColor(R.color.black, mContext.getTheme()));
-                isWalk = false;
-                btnRun.setColorFilter(getResources().getColor(R.color.black, mContext.getTheme()));
-                isRun = false;
-                try {
-                    mSpeed = Double.parseDouble(sharedPreferences.getString("setting_bike", getResources().getString(R.string.setting_bike_default)));
-                } catch (NumberFormatException e) {  // GOOD: The exception is caught.
-                    mSpeed = 10.0;
-                }
-            }
-        });
-
         /* 路径启动 */
-        ImageButton joystickStart = mJoystickLayout.findViewById(R.id.joystick_start);
+        joystickStart = mJoystickLayout.findViewById(R.id.joystick_start);
         joystickStart.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View view) {
-                Intent startIntent = new Intent("ACTION_START_ROUTE");
-                mContext.sendBroadcast(startIntent);
+                if(RouteManager.getInstance().getCurrentState() == RouteManager.RouteState.RUNNING){
+                    RouteManager.getInstance().pauseRoute();
+                    joystickStart.setImageResource(R.drawable.ic_start);
+                }else if(RouteManager.getInstance().getCurrentState() == RouteManager.RouteState.PAUSED
+                        || RouteManager.getInstance().getCurrentState() == RouteManager.RouteState.IDLE){
+                    RouteManager.getInstance().startRoute();
+                    joystickStart.setImageResource(R.drawable.ic_pause);
+                }
             }
         });
 
@@ -367,12 +307,19 @@ public class JoyStick extends View {
         joystickStop.setOnClickListener(new OnClickListener() {
             @Override
             public void onClick(View view) {
-                Intent startIntent = new Intent("ACTION_STOP_ROUTE");
-                mContext.sendBroadcast(startIntent);
+                RouteManager.getInstance().stopRoute();
             }
         });
     }
-
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onRouteStateEvent(RouteStateEvent event) {
+        if(RouteManager.getInstance().getCurrentState() == RouteManager.RouteState.RUNNING){
+            joystickStart.setImageResource(R.drawable.ic_pause);
+        }else if(RouteManager.getInstance().getCurrentState() == RouteManager.RouteState.PAUSED
+                || RouteManager.getInstance().getCurrentState() == RouteManager.RouteState.IDLE){
+            joystickStart.setImageResource(R.drawable.ic_start);
+        }
+    }
     private void processDirection(boolean auto, double angle, double r) {
         if (r <= 0) {
             mTimer.cancel();

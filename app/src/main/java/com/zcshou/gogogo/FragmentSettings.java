@@ -2,6 +2,7 @@ package com.zcshou.gogogo;
 
 import android.os.Bundle;
 import android.text.InputType;
+import android.widget.Toast;
 
 import androidx.preference.EditTextPreference;
 import androidx.preference.ListPreference;
@@ -9,9 +10,9 @@ import androidx.preference.Preference;
 import androidx.preference.PreferenceFragmentCompat;
 import androidx.preference.SwitchPreferenceCompat;
 
-import com.baidu.mapapi.SDKInitializer;
 import com.elvishew.xlog.XLog;
 import com.zcshou.utils.GoUtils;
+import com.zcshou.utils.RouteManager;
 
 import java.util.Objects;
 
@@ -92,6 +93,44 @@ public class FragmentSettings extends PreferenceFragmentCompat {
         Preference pfVersion = findPreference("setting_version");
         if (pfVersion != null) {
             pfVersion.setSummary(verName);
+        }
+
+        setPreferencesFromResource(R.xml.preferences_main, rootKey);
+
+        // 获取速度设置 Preference
+        EditTextPreference speedPreference = findPreference("setting_move_speed");
+        if (speedPreference != null) {
+            speedPreference.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener() {
+                @Override
+                public boolean onPreferenceChange(Preference preference, Object newValue) {
+                    try {
+                        double speed = Double.parseDouble(newValue.toString());
+
+                        // 验证速度范围
+                        if (speed <= 0) {
+                            Toast.makeText(getActivity(), "速度必须大于0", Toast.LENGTH_SHORT).show();
+                            return false; // 拒绝更改
+                        }
+
+                        // 更新 RouteManager 的速度
+                        RouteManager.getInstance().setmMoveSpeed(speed);
+
+                        // 更新摘要显示
+                        speedPreference.setSummary("当前速度: " + speed + " 米/秒");
+
+                        return true; // 接受更改
+                    } catch (NumberFormatException e) {
+                        Toast.makeText(getActivity(), "请输入有效的数字", Toast.LENGTH_SHORT).show();
+                        return false; // 拒绝更改
+                    }
+                }
+            });
+
+            // 初始化显示当前速度
+            String currentSpeed = speedPreference.getText();
+            if (currentSpeed != null) {
+                speedPreference.setSummary("当前速度: " + currentSpeed + " 米/秒");
+            }
         }
     }
 }
