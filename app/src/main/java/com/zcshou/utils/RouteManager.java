@@ -90,7 +90,7 @@ public class RouteManager {
         clearRoute();
         mRouteIndex = 0;
         mRouteListener = null;
-        isLoopMode = false;
+        isLoopMode = true;
         isSpeedChanged = false;
         mCurrentState = RouteState.IDLE;
     }
