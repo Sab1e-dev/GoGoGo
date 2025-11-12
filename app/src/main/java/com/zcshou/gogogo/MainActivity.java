@@ -32,6 +32,7 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -72,6 +73,7 @@ import com.baidu.mapapi.map.MyLocationData;
 import com.baidu.mapapi.map.Polyline;
 import com.baidu.mapapi.map.PolylineOptions;
 import com.baidu.mapapi.model.LatLng;
+import com.baidu.mapapi.model.LatLngBounds;
 import com.baidu.mapapi.search.core.SearchResult;
 import com.baidu.mapapi.search.geocode.GeoCodeResult;
 import com.baidu.mapapi.search.geocode.GeoCoder;
@@ -182,6 +184,8 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
     private RouteManager mRouteManager;
     private boolean isRouteRunning = false;
 
+    private static final String ROUTES_DIRECTORY = "Routes";
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -233,6 +237,8 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
         checkUpdateVersion(false);
 
         CoordinateValidator.testKnownPoints();
+
+        initRouteButtons();
     }
 
     @Override
@@ -426,6 +432,137 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
 
     }
 
+    /**
+     * 初始化路径保存/加载按钮
+     */
+    private void initRouteButtons() {
+        ImageButton saveRouteBtn = findViewById(R.id.save_route);
+        ImageButton loadRouteBtn = findViewById(R.id.load_route);
+
+        saveRouteBtn.setOnClickListener(v -> showSaveRouteDialog());
+        loadRouteBtn.setOnClickListener(v -> showLoadRouteDialog());
+    }
+
+    /**
+     * 显示保存路径对话框
+     */
+    private void showSaveRouteDialog() {
+        if (mRouteManager.getPoints().isEmpty()) {
+            Snackbar.make(mButtonStart, "当前没有路径可保存", Snackbar.LENGTH_SHORT).show();
+            return;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("保存路径");
+
+        View view = LayoutInflater.from(this).inflate(R.layout.dialog_save_route, null);
+        EditText fileNameEditText = view.findViewById(R.id.file_name);
+        CheckBox includeTimestampCheckbox = view.findViewById(R.id.include_timestamp);
+
+        // 生成默认文件名
+        String defaultName = "route_" + System.currentTimeMillis();
+        fileNameEditText.setText(defaultName);
+
+        builder.setView(view);
+        builder.setPositiveButton("保存", (dialog, which) -> {
+            String fileName = fileNameEditText.getText().toString().trim();
+            if (fileName.isEmpty()) {
+                fileName = defaultName;
+            }
+
+            if (includeTimestampCheckbox.isChecked()) {
+                fileName += "_" + System.currentTimeMillis();
+            }
+
+            if (!fileName.endsWith(".json")) {
+                fileName += ".json";
+            }
+
+            saveRouteToFile(fileName);
+        });
+
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    /**
+     * 保存路径到文件
+     */
+    private void saveRouteToFile(String fileName) {
+        File routesDir = new File(getExternalFilesDir(null), ROUTES_DIRECTORY);
+        if (!routesDir.exists()) {
+            routesDir.mkdirs();
+        }
+
+        File routeFile = new File(routesDir, fileName);
+
+        if (mRouteManager.saveRouteToFile(routeFile.getAbsolutePath())) {
+            Snackbar.make(mButtonStart, "路径保存成功: " + fileName, Snackbar.LENGTH_SHORT).show();
+        } else {
+            Snackbar.make(mButtonStart, "路径保存失败", Snackbar.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * 显示加载路径对话框
+     */
+    private void showLoadRouteDialog() {
+        File routesDir = new File(getExternalFilesDir(null), ROUTES_DIRECTORY);
+        List<String> savedRoutes = mRouteManager.getSavedRoutes(routesDir.getAbsolutePath());
+
+        if (savedRoutes.isEmpty()) {
+            Snackbar.make(mButtonStart, "没有找到保存的路径", Snackbar.LENGTH_SHORT).show();
+            return;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择要加载的路径");
+
+        String[] routeNames = savedRoutes.toArray(new String[0]);
+        builder.setItems(routeNames, (dialog, which) -> {
+            String selectedFile = routeNames[which];
+            loadRouteFromFile(selectedFile);
+        });
+
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    /**
+     * 从文件加载路径
+     */
+    private void loadRouteFromFile(String fileName) {
+        File routesDir = new File(getExternalFilesDir(null), ROUTES_DIRECTORY);
+        File routeFile = new File(routesDir, fileName);
+
+        if (mRouteManager.loadRouteFromFile(routeFile.getAbsolutePath())) {
+            Snackbar.make(mButtonStart, "路径加载成功: " + fileName, Snackbar.LENGTH_SHORT).show();
+
+            // 如果路径有多个点，自动缩放到合适的地图范围
+            if (mRouteManager.getPoints().size() > 0) {
+                zoomToRoute();
+            }
+        } else {
+            Snackbar.make(mButtonStart, "路径加载失败", Snackbar.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * 缩放到路径范围
+     */
+    private void zoomToRoute() {
+        List<LatLng> points = mRouteManager.getPoints();
+        if (points.isEmpty()) return;
+
+        LatLngBounds.Builder builder = new LatLngBounds.Builder();
+        for (LatLng point : points) {
+            builder.include(point);
+        }
+
+        MapStatusUpdate mapStatusUpdate = MapStatusUpdateFactory.newLatLngBounds(builder.build());
+        mBaiduMap.animateMapStatus(mapStatusUpdate);
+    }
+
     private void initRouteManager() {
         RouteManager.getInstance().initialize(mBaiduMap);
         mRouteManager = RouteManager.getInstance();
@@ -471,6 +608,119 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
         });
     }
     /*============================== NavigationView 相关 ==============================*/
+    /**
+     * 显示路径管理对话框
+     */
+    private void showRoutesManagementDialog() {
+        File routesDir = new File(getExternalFilesDir(null), ROUTES_DIRECTORY);
+        List<String> savedRoutes = mRouteManager.getSavedRoutes(routesDir.getAbsolutePath());
+
+        if (savedRoutes.isEmpty()) {
+            Snackbar.make(mButtonStart, "没有保存的路径", Snackbar.LENGTH_SHORT).show();
+            return;
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("路径管理");
+
+        String[] routeNames = savedRoutes.toArray(new String[0]);
+        builder.setItems(routeNames, (dialog, which) -> {
+            String selectedFile = routeNames[which];
+            showRouteOptionsDialog(selectedFile);
+        });
+
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    /**
+     * 显示单个路径的操作选项
+     */
+    private void showRouteOptionsDialog(String fileName) {
+        String[] options = {"加载路径", "删除路径", "重命名路径"};
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("操作: " + fileName);
+        builder.setItems(options, (dialog, which) -> {
+            switch (which) {
+                case 0: // 加载
+                    loadRouteFromFile(fileName);
+                    break;
+                case 1: // 删除
+                    deleteRouteFile(fileName);
+                    break;
+                case 2: // 重命名
+                    renameRouteFile(fileName);
+                    break;
+            }
+        });
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    /**
+     * 删除路径文件
+     */
+    private void deleteRouteFile(String fileName) {
+        new AlertDialog.Builder(this)
+                .setTitle("确认删除")
+                .setMessage("确定要删除路径 '" + fileName + "' 吗？")
+                .setPositiveButton("删除", (dialog, which) -> {
+                    File routesDir = new File(getExternalFilesDir(null), ROUTES_DIRECTORY);
+                    File routeFile = new File(routesDir, fileName);
+
+                    if (routeFile.delete()) {
+                        Snackbar.make(mButtonStart, "路径删除成功", Snackbar.LENGTH_SHORT).show();
+                    } else {
+                        Snackbar.make(mButtonStart, "路径删除失败", Snackbar.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("取消", null)
+                .show();
+    }
+
+    /**
+     * 重命名路径文件
+     */
+    private void renameRouteFile(String oldFileName) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("重命名路径");
+
+        View view = LayoutInflater.from(this).inflate(R.layout.dialog_save_route, null);
+        EditText fileNameEditText = view.findViewById(R.id.file_name);
+        CheckBox includeTimestampCheckbox = view.findViewById(R.id.include_timestamp);
+
+        // 移除原有扩展名
+        String nameWithoutExt = oldFileName.replace(".json", "");
+        fileNameEditText.setText(nameWithoutExt);
+        includeTimestampCheckbox.setVisibility(View.GONE);
+
+        builder.setView(view);
+        builder.setPositiveButton("重命名", (dialog, which) -> {
+            String newFileName = fileNameEditText.getText().toString().trim();
+            if (newFileName.isEmpty()) {
+                Snackbar.make(mButtonStart, "文件名不能为空", Snackbar.LENGTH_SHORT).show();
+                return;
+            }
+
+            if (!newFileName.endsWith(".json")) {
+                newFileName += ".json";
+            }
+
+            File routesDir = new File(getExternalFilesDir(null), ROUTES_DIRECTORY);
+            File oldFile = new File(routesDir, oldFileName);
+            File newFile = new File(routesDir, newFileName);
+
+            if (oldFile.renameTo(newFile)) {
+                Snackbar.make(mButtonStart, "重命名成功", Snackbar.LENGTH_SHORT).show();
+            } else {
+                Snackbar.make(mButtonStart, "重命名失败", Snackbar.LENGTH_SHORT).show();
+            }
+        });
+
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
     private void initNavigationView() {
         /*============================== NavigationView 相关 ==============================*/
         NavigationView mNavigationView = findViewById(R.id.nav_view);
@@ -481,7 +731,10 @@ public class MainActivity extends BaseActivity implements SensorEventListener {
                 Intent intent = new Intent(MainActivity.this, HistoryActivity.class);
 
                 startActivity(intent);
-            } else if (id == R.id.nav_settings) {
+            } else if (id == R.id.nav_routes) {
+                showRoutesManagementDialog();
+            }
+            else if (id == R.id.nav_settings) {
                 Intent intent = new Intent(MainActivity.this, SettingsActivity.class);
                 startActivity(intent);
             } else if (id == R.id.nav_dev) {

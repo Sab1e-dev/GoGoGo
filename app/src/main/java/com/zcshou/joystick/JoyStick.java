@@ -264,7 +264,7 @@ public class JoyStick extends View {
         mTimer.setListener(new GoUtils.TimeCount.TimeCountListener() {
             @Override
             public void onTick(long millisUntilFinished) {
-
+                
             }
 
             @Override

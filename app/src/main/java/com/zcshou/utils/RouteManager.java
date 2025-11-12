@@ -15,7 +15,15 @@ import com.baidu.mapapi.model.LatLng;
 import com.zcshou.gogogo.R;
 
 import org.greenrobot.eventbus.EventBus;
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -28,7 +36,7 @@ public class RouteManager {
     private Handler mRouteHandler = new Handler(Looper.getMainLooper());
     private int mRouteIndex = 0;
     private RouteListener mRouteListener;
-    private boolean isLoopMode = false;
+    private boolean isLoopMode = true;
     private boolean isSpeedChanged = false;
     private double mMoveSpeed = 1.0;
 
@@ -186,6 +194,117 @@ public class RouteManager {
     public boolean isRouteIdle() {
         return mCurrentState == RouteState.IDLE;
     }
+
+    /**
+     * 保存路径到JSON文件
+     */
+    public boolean saveRouteToFile(String filePath) {
+        if (mPoints.isEmpty()) {
+            return false;
+        }
+
+        try {
+            JSONObject routeJson = new JSONObject();
+            JSONArray pointsArray = new JSONArray();
+
+            for (LatLng point : mPoints) {
+                JSONObject pointJson = new JSONObject();
+                pointJson.put("longitude", point.longitude);
+                pointJson.put("latitude", point.latitude);
+                pointsArray.put(pointJson);
+            }
+
+            routeJson.put("points", pointsArray);
+            routeJson.put("loopMode", isLoopMode);
+            routeJson.put("speed", mMoveSpeed);
+            routeJson.put("timestamp", System.currentTimeMillis());
+
+            // 写入文件
+            FileWriter fileWriter = new FileWriter(filePath);
+            fileWriter.write(routeJson.toString());
+            fileWriter.flush();
+            fileWriter.close();
+
+            return true;
+        } catch (JSONException | IOException e) {
+            Log.e("RouteManager", "保存路径失败: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 从JSON文件加载路径
+     */
+    public boolean loadRouteFromFile(String filePath) {
+        try {
+            File file = new File(filePath);
+            if (!file.exists()) {
+                return false;
+            }
+
+            BufferedReader reader = new BufferedReader(new FileReader(file));
+            StringBuilder stringBuilder = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                stringBuilder.append(line);
+            }
+            reader.close();
+
+            JSONObject routeJson = new JSONObject(stringBuilder.toString());
+            JSONArray pointsArray = routeJson.getJSONArray("points");
+
+            List<LatLng> loadedPoints = new ArrayList<>();
+            for (int i = 0; i < pointsArray.length(); i++) {
+                JSONObject pointJson = pointsArray.getJSONObject(i);
+                double longitude = pointJson.getDouble("longitude");
+                double latitude = pointJson.getDouble("latitude");
+                loadedPoints.add(new LatLng(latitude, longitude));
+            }
+
+            // 停止当前路径
+            stopRoute();
+
+            // 清除现有点并加载新点
+            mPoints.clear();
+            mPoints.addAll(loadedPoints);
+
+            // 设置其他参数
+            if (routeJson.has("loopMode")) {
+                isLoopMode = routeJson.getBoolean("loopMode");
+            }
+            if (routeJson.has("speed")) {
+                mMoveSpeed = routeJson.getDouble("speed");
+            }
+
+            // 重绘路径
+            redrawRoute();
+
+            return true;
+        } catch (JSONException | IOException e) {
+            Log.e("RouteManager", "加载路径失败: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 获取保存的路径列表
+     */
+    public List<String> getSavedRoutes(String directoryPath) {
+        List<String> routeFiles = new ArrayList<>();
+        File directory = new File(directoryPath);
+
+        if (directory.exists() && directory.isDirectory()) {
+            File[] files = directory.listFiles((dir, name) -> name.endsWith(".json"));
+            if (files != null) {
+                for (File file : files) {
+                    routeFiles.add(file.getName());
+                }
+            }
+        }
+
+        return routeFiles;
+    }
+
 
     private void drawLine() {
         if (mPoints.size() < 2) return;

@@ -125,7 +125,33 @@
             android:contentDescription="@string/delete_point"
             android:theme="@style/RippleWhite"
             app:srcCompat="@drawable/ic_infinite"
-            app:tint="@color/dimgrey" />
+            app:tint="@color/colorAccent" />
+
+        <ImageButton
+            android:id="@+id/save_route"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_alignParentEnd="true"
+            android:layout_marginTop="100dp"
+            android:layout_marginEnd="10dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/input_button"
+            android:theme="@style/RippleWhite"
+            app:srcCompat="@drawable/ic_save"
+            app:tint="@color/colorAccent" />
+
+        <ImageButton
+            android:id="@+id/load_route"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_alignParentEnd="true"
+            android:layout_marginTop="290dp"
+            android:layout_marginEnd="10dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/input_button"
+            android:theme="@style/RippleWhite"
+            app:srcCompat="@drawable/ic_fly"
+            app:tint="@color/colorAccent" />
 
         <ImageButton
             android:id="@+id/input_pos"

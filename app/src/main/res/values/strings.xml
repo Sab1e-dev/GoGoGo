@@ -138,4 +138,11 @@
     <string name="update_ignore">忽略一次</string>
     <string name="update_time">更新时间：</string>
     <string name="update_commit">提交信息：</string>
+
+    <string name="save_route">保存路径</string>
+    <string name="load_route">加载路径</string>
+    <string name="route_saved">路径保存成功</string>
+    <string name="route_loaded">路径加载成功</string>
+    <string name="no_route_to_save">没有路径可保存</string>
+    <string name="no_saved_routes">没有保存的路径</string>
 </resources>
